@@ -1,6 +1,4 @@
 # nsaa-paramgen-amber
-<<<<<<< HEAD
-
 
 ### Non-Standard Amino Acid Parameterization Pipeline
 #### This pipeline automates the process of preparing non-standard amino acids for molecular simulations using AMBER. It:
@@ -19,5 +17,4 @@ main_pipeline.py
     ├── run_antechamber.py          
     └── remove.py     
 
-=======
->>>>>>> e77488c906932d539c261ff3641264dd70e672af
+
