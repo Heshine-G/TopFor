@@ -1,4 +1,5 @@
 # nsaa-paramgen-amber
+<<<<<<< HEAD
 
 
 ### Non-Standard Amino Acid Parameterization Pipeline
@@ -18,3 +19,5 @@ main_pipeline.py
     ├── run_antechamber.py          
     └── remove.py     
 
+=======
+>>>>>>> e77488c906932d539c261ff3641264dd70e672af
