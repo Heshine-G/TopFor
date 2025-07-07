@@ -44,7 +44,7 @@ class NonStandardAminoAcidProcessor:
         output_mol2 = os.path.join(output_dir, f"{residue_name}_charged.mol2")
         cmd = [
             "antechamber", "-fi", "mol2", "-i", input_mol2, "-bk", residue_name,
-            "-fo", "mol2", "-o", output_mol2, "-c", "gas", "-at", "amber"
+            "-fo", "mol2", "-o", output_mol2, "-c", "bcc", "-at", "amber"
         ]
 
         result = subprocess.run(cmd, capture_output=True, text=True)
