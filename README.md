@@ -10,13 +10,12 @@
 3. Generates parameter files via Antechamber and related tools.
 
 
-main_pipeline.py                 
-└── modules/
-
-    ├── __init__.py                  
-    ├── processor.py                 
-    ├── capping.py                   
-    ├── run_antechamber.py          
-    └── remove.py     
+        main.py                 
+        modules/
+        ├── __init__.py                  
+        ├── processor.py                 
+        ├── capping.py                   
+        ├── run_antechamber.py          
+        └── remove.py     
 
 
