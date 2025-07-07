@@ -19,8 +19,8 @@ def run_antechamber_for_all(mol2_files):
         ff14SB_frcmod_output = os.path.join(output_dir, f"{residue_name}_ff14SB.frcmod")
 
         try:
-            subprocess.run(f"antechamber -fi mol2 -i {input_mol2} -bk {residue_name} -fo ac -o {ac_output} -c gas -at amber", shell=True, check=True)
-            subprocess.run(f"antechamber -fi mol2 -i {input_mol2} -bk {residue_name} -fo mol2 -o {mol2_output} -c gas -at amber", shell=True, check=True)
+            subprocess.run(f"antechamber -fi mol2 -i {input_mol2} -bk {residue_name} -fo ac -o {ac_output} -c bcc -at amber", shell=True, check=True)
+            subprocess.run(f"antechamber -fi mol2 -i {input_mol2} -bk {residue_name} -fo mol2 -o {mol2_output} -c bcc -at amber", shell=True, check=True)
         except subprocess.CalledProcessError as e:
             print(f"Antechamber failed: {e}")
             continue
