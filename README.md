@@ -45,7 +45,7 @@ You need either:
 Assuming you have your .mol2 files in the current working directory:
 
 #### Single file input:
-<pre><code>python main.py DAB.mol2</code></pre>
+<pre><code>$ python main.py DAB.mol2</code></pre>
 
 #### Batch input with list:
-<pre><code>python main.py mol2_list.txt</code></pre>
+<pre><code>$ python main.py mol2_list.txt</code></pre>
