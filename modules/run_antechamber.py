@@ -1,11 +1,9 @@
 import subprocess
 import os
-import time
 from modules.remove import process_mol2_file
 
 def run_antechamber_for_all(mol2_files):
     for input_mol2 in mol2_files:
-        start_time = time.perf_counter()
         base_name = os.path.splitext(os.path.basename(input_mol2))[0]
         residue_name = base_name.upper()
         output_dir = base_name
@@ -53,7 +51,7 @@ quit
         if not run_cmd(f"tleap -f {leap_file}", "tleap failed"): continue
         print(f"Successfully ran tleap and created library: {lib_output}")
 
-        # 4) MC generation (no run_cmd)
+        # 4) MC generation 
         try:
             process_mol2_file(mol2_output, mc_output)
             print(f"Successfully generated MC file: {mc_output}")
@@ -82,8 +80,7 @@ quit
         else:
             continue
 
-        # Final summary
+        
         print(f"\n\033[1mParameter Generation Successful for: {base_name}\033[0m")
 
-        elapsed = time.perf_counter() - start_time
-        print(f"Time taken for {base_name}: {elapsed:.2f} seconds\n")
+        
