@@ -4,52 +4,52 @@
 
 ### Features
 
-. Single-file mode: Process one MOL2 file at a time.
+- Single-file mode: Process one MOL2 file at a time.
 
-. Batch mode: Process multiple MOL2 files via glob patterns or a text file list.
+- Batch mode: Process multiple MOL2 files via glob patterns or a text file list.
 
-. Automated pipeline: Capping, Antechamber, TLeap, PREPGEN, and PARMCHK2 steps are chained automatically.
+- Automated pipeline: Capping, Antechamber, TLeap, PREPGEN, and PARMCHK2 steps are chained automatically.
 
 ### Requirements
 
-. Operating System: Linux, macOS, or Windows with WSL/Git Bash
+- Operating System: Linux, macOS, or Windows with WSL/Git Bash
 
-. AMBER Tools: antechamber, tleap, prepgen, parmchk2 installed and in your PATH
+- AMBER Tools: antechamber, tleap, prepgen, parmchk2 installed and in your PATH
 
-. Conda: Miniforge or Anaconda installed
+- Conda: Miniforge or Anaconda installed
 
 ### Installation
 
 #### 1. Clone the repository
 
-git clone https://github.com/yourusername/nsaa-paramgen-amber.git
-cd nsaa-paramgen-amber
+<pre><code>git clone https://github.com/yourusername/nsaa-paramgen-amber.git
+cd nsaa-paramgen-amber</code></pre>
 
 #### 2. Create and activate the conda environment
 
-conda create -n paramgen python=3.10 numpy pandas rdkit pymol-open-source ambertools -c conda-forge
-conda activate paramgen
+<pre><code>conda create -n paramgen python=3.10 numpy pandas rdkit pymol-open-source ambertools -c conda-forge
+conda activate paramgen</code></pre>
 
 #### 3. Make the CLI launcher script executable
 
-chmod +x topfor
+<pre><code>chmod +x topfor</code></pre>
 
 #### 4. Add the project directory to your PATH
 
-echo 'export PATH="$PATH:$(pwd)"' >> ~/.bashrc
-source ~/.bashrc
+<pre><code>echo 'export PATH="$PATH:$(pwd)"' >> ~/.bashrc
+source ~/.bashrc</code></pre>
 
-Note: If you clone elsewhere, adjust $(pwd) to the absolute path.
+> Note: If you clone elsewhere, adjust $(pwd) to the absolute path.
 
 ### Usage
 
 #### Single-file mode
 
-topfor -i myresidue.mol2
+<pre><code>topfor -i myresidue.mol2</code></pre>
 
 #### Batch mode via glob pattern
 
-topfor -b "*.mol2"
+<pre><code>topfor -b "*.mol2"</code></pre>
 
 #### Batch mode via text file list
 
@@ -57,7 +57,7 @@ topfor -b "*.mol2"
 
 2. Run:
 
-topfor -b list.txt
+<pre><code>topfor -b list.txt</code></pre>
 
 #### Flags
 
@@ -69,33 +69,33 @@ topfor -b list.txt
 
 For each input file NAME.mol2, the tool creates a directory NAME/ containing:
 
-    . NAME.ac, NAME.mol2 (charged structures)
+    - NAME.ac, NAME.mol2 (charged structures)
 
-    . NAME.lib (TLeap library)
+    - NAME.lib (TLeap library)
 
-    . NAME.prepin (PREPGEN input)
+    - NAME.prepin (PREPGEN input)
 
-    . NAME.mc (MC file)
+    - NAME.mc (MC file)
 
-    . NAME.frcmod, NAME_GAFF.frcmod, NAME_FF14SB.frcmod (parameter modification files)
+    - NAME.frcmod, NAME_GAFF.frcmod, NAME_FF14SB.frcmod (parameter modification files)
 
 ### Examples
 
 # Single file
-topfor -i AIB.mol2
+<pre><code>topfor -i AIB.mol2</code></pre>
 
 # Batch via glob
-topfor -b "residues/*.mol2"
+<pre><code>topfor -b "residues/*.mol2"</code></pre>
 
 # Batch via list
-echo "AIB.mol2" > list.txt
+<pre><code>echo "AIB.mol2" > list.txt
 echo "FGA.mol2" >> list.txt
-topfor -b list.txt
+topfor -b list.txt</code></pre>
 
 ### Troubleshooting
 
-. bash: topfor: command not found: Ensure topfor is executable (chmod +x topfor) and your repo folder is added to PATH.
+- bash: topfor: command not found: Ensure topfor is executable (chmod +x topfor) and your repo folder is added to PATH.
 
-. CRLF errors: Convert topfor script to LF line endings:
+- CRLF errors: Convert topfor script to LF line endings:
 
-dos2unix topfor
+<pre><code> dos2unix topfor</code></pre>
