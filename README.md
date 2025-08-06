@@ -1,6 +1,6 @@
 ## nsaa-paramgen-amber
 
-#### nsaa-paramgen-amber is a command-line tool for generating AMBER parameters for non-standard amino acids. It automates capping, charge calculation, and parameter file creation for use with AMBER force fields.
+nsaa-paramgen-amber is a command-line tool for generating AMBER parameters for non-standard amino acids. It automates capping, charge calculation, and parameter file creation for use with AMBER force fields.
 
 ### Features
 
@@ -22,22 +22,22 @@
 
 #### 1. Clone the repository
 
-<pre><code>git clone https://github.com/yourusername/nsaa-paramgen-amber.git
-cd nsaa-paramgen-amber</code></pre>
+    git clone https://github.com/yourusername/nsaa-paramgen-amber.git
+    cd nsaa-paramgen-amber
 
 #### 2. Create and activate the conda environment
 
-<pre><code>conda create -n paramgen python=3.10 numpy pandas rdkit pymol-open-source ambertools -c conda-forge
-conda activate paramgen</code></pre>
+    conda create -n paramgen python=3.10 numpy pandas rdkit pymol-open-source ambertools -c conda-forge
+    conda activate paramgen
 
 #### 3. Make the CLI launcher script executable
 
-<pre><code>chmod +x topfor</code></pre>
-
+    chmod +x topfor
+    
 #### 4. Add the project directory to your PATH
 
-<pre><code>echo 'export PATH="$PATH:$(pwd)"' >> ~/.bashrc
-source ~/.bashrc</code></pre>
+    echo 'export PATH="$PATH:$(pwd)"' >> ~/.bashrc
+    source ~/.bashrc
 
 > Note: If you clone elsewhere, adjust $(pwd) to the absolute path.
 
@@ -45,57 +45,57 @@ source ~/.bashrc</code></pre>
 
 #### Single-file mode
 
-<pre><code>topfor -i myresidue.mol2</code></pre>
-
+    topfor -i myresidue.mol2
+    
 #### Batch mode via glob pattern
 
-<pre><code>topfor -b "*.mol2"</code></pre>
-
+    topfor -b "*.mol2"
+    
 #### Batch mode via text file list
 
 1. Create a text file (e.g., list.txt) with one .mol2 path per line.
 
 2. Run:
 
-<pre><code>topfor -b list.txt</code></pre>
-
+        topfor -b list.txt
+    
 #### Flags
 
-. -i, --input    : Path to a single .mol2 file
+- -i, --input    : Path to a single .mol2 file
 
-. -b, --batch   : Glob pattern or .txt file containing .mol2 paths
+- -b, --batch   : Glob pattern or .txt file containing .mol2 paths
 
 ### Output
 
 For each input file NAME.mol2, the tool creates a directory NAME/ containing:
 
-    - NAME.ac, NAME.mol2 (charged structures)
+- NAME.ac, NAME.mol2 (charged structures)
 
-    - NAME.lib (TLeap library)
+- NAME.lib (TLeap library)
 
-    - NAME.prepin (PREPGEN input)
+- NAME.prepin (PREPGEN input)
 
-    - NAME.mc (MC file)
+- NAME.mc (MC file)
 
-    - NAME.frcmod, NAME_GAFF.frcmod, NAME_FF14SB.frcmod (parameter modification files)
+- NAME.frcmod, NAME_GAFF.frcmod, NAME_FF14SB.frcmod (parameter modification files)
 
 ### Examples
 
-# Single file
-<pre><code>topfor -i AIB.mol2</code></pre>
-
-# Batch via glob
-<pre><code>topfor -b "residues/*.mol2"</code></pre>
-
-# Batch via list
-<pre><code>echo "AIB.mol2" > list.txt
-echo "FGA.mol2" >> list.txt
-topfor -b list.txt</code></pre>
+    # Single file
+    topfor -i AIB.mol2
+    
+    # Batch via glob
+    topfor -b "residues/*.mol2"
+    
+    # Batch via list
+    echo "AIB.mol2" > list.txt
+    echo "FGA.mol2" >> list.txt
+    topfor -b list.txt
 
 ### Troubleshooting
 
 - bash: topfor: command not found: Ensure topfor is executable (chmod +x topfor) and your repo folder is added to PATH.
 
 - CRLF errors: Convert topfor script to LF line endings:
-
-<pre><code> dos2unix topfor</code></pre>
+    
+        dos2unix topfor
