@@ -1,3 +1,0 @@
-FGA.mol2
-AIB.mol2
-FGA.mol2
