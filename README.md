@@ -22,7 +22,7 @@ nsaa-paramgen-amber is a command-line tool for generating AMBER parameters for n
 
 #### 1. Clone the repository
 
-    git clone https://github.com/yourusername/nsaa-paramgen-amber.git
+    git clone git@github.com:Heshine-G/nsaa-paramgen-amber.git
     cd nsaa-paramgen-amber
 
 #### 2. Create and activate the conda environment
