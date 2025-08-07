@@ -99,4 +99,4 @@ For each input file NAME.mol2, the tool creates a directory NAME/ containing:
 - CRLF errors: Convert topfor script to LF line endings:
     
         dos2unix topfor
-    - In VS Code, click the CRLF indicator in the bottom-right corner of the status bar and select LF.
+    - Or in VS Code, click the CRLF indicator in the bottom-right corner of the status bar and select LF.
