@@ -1,6 +1,6 @@
 ## nsaa-paramgen-amber
 
-nsaa-paramgen-amber is a command-line tool for generating AMBER parameters for non-standard amino acids. It automates capping, charge calculation, and parameter file creation for use with AMBER force fields.
+nsaa-paramgen-amber is a command-line tool for generating AMBER parameters for non-standard amino acids (nsaa). It automates capping, charge calculation, and parameter file creation for use with AMBER force fields.
 
 ### Features
 
