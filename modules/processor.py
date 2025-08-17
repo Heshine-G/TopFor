@@ -3,8 +3,9 @@ import sys
 import subprocess
 
 class NonStandardAminoAcidProcessor:
-    def __init__(self, input_file):
+    def __init__(self, input_file, charge_model='bcc'):
         self.input_file = input_file
+        self.charge_model = charge_model
         self.output_dir = "non_standard_residues"
 
     def create_output_directory(self):
@@ -41,10 +42,10 @@ class NonStandardAminoAcidProcessor:
             return None
 
     def run_antechamber(self, input_mol2, residue_name, output_dir):
-        output_mol2 = os.path.join(output_dir, f"{residue_name}_charged.mol2")
+        output_mol2 = os.path.join(output_dir, f"{residue_name}.mol2")
         cmd = [
             "antechamber", "-fi", "mol2", "-i", input_mol2, "-bk", residue_name,
-            "-fo", "mol2", "-o", output_mol2, "-c", "gas", "-at", "amber"
+            "-fo", "mol2", "-o", output_mol2, "-c", self.charge_model, "-at", "amber"
         ]
 
         result = subprocess.run(cmd, capture_output=True, text=True)
@@ -56,7 +57,6 @@ class NonStandardAminoAcidProcessor:
             print("[Antechamber Error] Output mol2 file is missing or empty.")
             return None
 
-        print(f"[Antechamber] Successfully generated: {output_mol2}")
         return output_mol2
 
     def process(self):
@@ -79,11 +79,13 @@ class NonStandardAminoAcidProcessor:
             resname = os.path.splitext(os.path.basename(mol2_path))[0].upper()
 
             capped_file = self.add_terminal_groups_with_pymol(residue_folder)
+            print(f"Capping successful: {capped_file}")
             if not capped_file:
                 continue
 
             charged_file = self.run_antechamber(capped_file, resname, residue_folder)
             if charged_file:
+                print(f"Charge generation successful: {charged_file}")
                 final_mol2_files.append(charged_file)
 
         return final_mol2_files
