@@ -17,6 +17,7 @@ if not os.path.exists(input_file):
 
 pymol.cmd.load(input_file, "prot")
 pymol.cmd.remove("hydro")
+pymol.cmd.remove("name OXT")
 pymol.cmd.select("pk1", "name N")
 if pymol.cmd.count_atoms("pk1") > 0:
     pymol.cmd.editor.attach_amino_acid("pk1", "ace")

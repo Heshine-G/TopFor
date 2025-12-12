@@ -1,28 +1,34 @@
 import subprocess
 import os
-import time
 from modules.remove import process_mol2_file
 
-def run_antechamber_for_all(mol2_files):
+def run_antechamber_for_all(mol2_files, backbone='ff19SB', sidechain='gaff2', charge='bcc'):
+    backbone_parm_map = {
+        'ff14SB': 'parm10.dat',
+        'ff19SB': 'parm19.dat',
+        'ff99SB': 'parm99.dat'
+    }
+
     for input_mol2 in mol2_files:
-        start_time = time.perf_counter()
         base_name = os.path.splitext(os.path.basename(input_mol2))[0]
-        residue_name = base_name.upper()
-        output_dir = base_name
+        # Extract only the residue name (remove chain ID, position)
+        residue_name = base_name.split('_')[0].upper()
+        output_dir = residue_name
         os.makedirs(output_dir, exist_ok=True)
 
-        ac_output = os.path.join(output_dir, f"{base_name}.ac")
-        mol2_output = os.path.join(output_dir, f"{base_name}.mol2")
-        lib_output = os.path.join(output_dir, f"{base_name}.lib")
-        prepin_output = os.path.join(output_dir, f"{base_name}.prepin")
-        mc_output = os.path.join(output_dir, f"{base_name}.mc")
-        frcmod_output = os.path.join(output_dir, f"{base_name}.frcmod")
-        gaff_frcmod_output = os.path.join(output_dir, f"{residue_name}_gaff.frcmod")
-        ff14SB_frcmod_output = os.path.join(output_dir, f"{residue_name}_ff14SB.frcmod")
+        ac_output = os.path.join(output_dir, f"{residue_name}.ac")
+        #mol2_output = os.path.join(output_dir, f"{residue_name}.mol2")
+        lib_output = os.path.join(output_dir, f"{residue_name}.lib")
+        prepin_output = os.path.join(output_dir, f"{residue_name}.prepin")
+        mc_output = os.path.join(output_dir, f"{residue_name}.mc")
+        frcmod_output = os.path.join(output_dir, f"{residue_name}.frcmod")
+        gaff_frcmod_output = os.path.join(output_dir, f"{residue_name}_{sidechain}.frcmod")
+        backbone_frcmod_output = os.path.join(output_dir, f"{residue_name}_{backbone}.frcmod")
 
         leap_script = f"""
-source leaprc.gaff
-{residue_name} = loadmol2 {mol2_output}
+source leaprc.{sidechain}
+source leaprc.protein.{backbone}
+{residue_name} = loadmol2 {input_mol2}
 set {residue_name} head {residue_name}.1.N
 set {residue_name} tail {residue_name}.1.C
 saveoff {residue_name} {lib_output}
@@ -37,53 +43,38 @@ quit
                 return False
             return True
 
-        # 1) Generate AC
-        ac_cmd = f"antechamber -fi mol2 -i {input_mol2} -bk {residue_name} -fo ac -o {ac_output} -c bcc -at amber"
+        # Use dynamic charge model in both antechamber steps
+        ac_cmd = f"antechamber -fi mol2 -i {input_mol2} -bk {residue_name} -fo ac -o {ac_output} -c {charge} -at amber"
         if not run_cmd(ac_cmd, "Antechamber AC failed"): continue
-        print(f"Successfully generated AC file: {ac_output}")
 
-        # 2) Generate MOL2
-        mol2_cmd = f"antechamber -fi mol2 -i {input_mol2} -bk {residue_name} -fo mol2 -o {mol2_output} -c bcc -at amber"
-        if not run_cmd(mol2_cmd, "Antechamber MOL2 failed"): continue
-        print(f"Successfully generated MOL2 file: {mol2_output}")
+        '''mol2_cmd = f"antechamber -fi mol2 -i {input_mol2} -bk {residue_name} -fo mol2 -o {mol2_output} -c {charge} -at amber"
+        if not run_cmd(mol2_cmd, "Antechamber MOL2 failed"): continue'''
 
-        # 3) Run tleap
         with open(leap_file, 'w') as f:
             f.write(leap_script)
         if not run_cmd(f"tleap -f {leap_file}", "tleap failed"): continue
-        print(f"Successfully ran tleap and created library: {lib_output}")
 
-        # 4) MC generation (no run_cmd)
         try:
-            process_mol2_file(mol2_output, mc_output)
-            print(f"Successfully generated MC file: {mc_output}")
+            process_mol2_file(input_mol2, mc_output)
         except Exception as e:
             print(f"MC generation failed: {e}")
             continue
 
-        # 5) Prepgen
         prep_cmd = f"prepgen -i {ac_output} -o {prepin_output} -m {mc_output} -rn {residue_name}"
         if not run_cmd(prep_cmd, "prepgen failed"): continue
-        print(f"Successfully generated prepi file: {prepin_output}")
 
-        # 6) parmchk2 steps
-        if run_cmd(f"parmchk2 -i {prepin_output} -f prepi -o {frcmod_output} -a Y -p $AMBERHOME/dat/leap/parm/parm10.dat", "parmchk2 prepi failed"):
-            print(f"Successfully generated FRCMOD: {frcmod_output}")
+        parm_file = backbone_parm_map.get(backbone, 'parm10.dat')
+        parmchk_backbone = f"parmchk2 -i {ac_output} -f ac -o {backbone_frcmod_output} -a Y -p $AMBERHOME/dat/leap/parm/{parm_file}"
+        parmchk_sidechain = f"parmchk2 -i {ac_output} -f ac -o {gaff_frcmod_output} -a Y -p $AMBERHOME/dat/leap/parm/{sidechain}.dat"
+
+        if run_cmd(parmchk_backbone, "parmchk2 backbone failed"):
+            print(f"Successfully generated backbone FRCMOD: {backbone_frcmod_output}")
         else:
             continue
 
-        if run_cmd(f"parmchk2 -i {ac_output} -f ac -o {gaff_frcmod_output}", "parmchk2 gaff failed"):
-            print(f"Successfully generated GAFF FRCMOD: {gaff_frcmod_output}")
+        if run_cmd(parmchk_sidechain, "parmchk2 sidechain failed"):
+            print(f"Successfully generated sidechain FRCMOD: {gaff_frcmod_output}")
         else:
             continue
 
-        if run_cmd(f"parmchk2 -i {ac_output} -f ac -o {ff14SB_frcmod_output} -a Y -p $AMBERHOME/dat/leap/parm/parm10.dat", "parmchk2 ff14SB failed"):
-            print(f"Successfully generated FF14SB FRCMOD: {ff14SB_frcmod_output}")
-        else:
-            continue
-
-        # Final summary
-        print(f"\n\033[1mParameter Generation Successful for: {base_name}\033[0m")
-
-        elapsed = time.perf_counter() - start_time
-        print(f"Time taken for {base_name}: {elapsed:.2f} seconds\n")
+        print(f"\n\033[1mParameter Generation Successful for: {residue_name}\033[0m")
