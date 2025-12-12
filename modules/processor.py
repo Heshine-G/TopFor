@@ -90,6 +90,7 @@ class NonStandardAminoAcidProcessor:
                 final_mol2_files.append(charged_file)
 
         return final_mol2_files
+<<<<<<< HEAD
 
     def process_single_residue(self):
         self.create_output_directory()
@@ -148,3 +149,5 @@ class NonStandardAminoAcidProcessor:
 
 
         return self._process_mol2_files(mol2_converted)
+=======
+>>>>>>> 5e491f921586e2c42c0ba801adfd91fffc7c84ea

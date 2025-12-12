@@ -1,6 +1,10 @@
-## nsaa-paramgen-amber
+## TopFor
 
+<<<<<<< HEAD
 nsaa-paramgen-amber is a command-line tool for generating AMBER parameters for non-standard amino acids. It automates capping, charge calculation, and parameter file creation for use with AMBER force fields.
+=======
+TopFor is a command-line tool for generating AMBER parameters for non-standard amino acids (nsaa). It automates capping, charge calculation, and parameter file creation for use with AMBER force fields.
+>>>>>>> 5e491f921586e2c42c0ba801adfd91fffc7c84ea
 
 ### Features
 
@@ -22,8 +26,13 @@ nsaa-paramgen-amber is a command-line tool for generating AMBER parameters for n
 
 #### 1. Clone the repository
 
+<<<<<<< HEAD
     git clone git@github.com:Heshine-G/nsaa-paramgen-amber.git
     cd nsaa-paramgen-amber
+=======
+    git clone git@github.com:Heshine-G/TopFor.git
+    cd TopFor
+>>>>>>> 5e491f921586e2c42c0ba801adfd91fffc7c84ea
 
 #### 2. Create and activate the conda environment
 
@@ -99,3 +108,7 @@ For each input file NAME.mol2, the tool creates a directory NAME/ containing:
 - CRLF errors: Convert topfor script to LF line endings:
     
         dos2unix topfor
+<<<<<<< HEAD
+=======
+    - Or in VS Code, click the CRLF indicator in the bottom-right corner of the status bar and select LF.
+>>>>>>> 5e491f921586e2c42c0ba801adfd91fffc7c84ea
