@@ -16,32 +16,19 @@ def run_antechamber_for_all(mol2_files, backbone='ff19SB', sidechain='gaff2', ch
         output_dir = residue_name
         os.makedirs(output_dir, exist_ok=True)
 
-<<<<<<< HEAD
         ac_output = os.path.join(output_dir, f"{residue_name}.ac")
-        #mol2_output = os.path.join(output_dir, f"{residue_name}.mol2")
+        mol2_output = os.path.join(output_dir, f"{residue_name}.mol2")
         lib_output = os.path.join(output_dir, f"{residue_name}.lib")
         prepin_output = os.path.join(output_dir, f"{residue_name}.prepin")
         mc_output = os.path.join(output_dir, f"{residue_name}.mc")
         frcmod_output = os.path.join(output_dir, f"{residue_name}.frcmod")
-=======
-        ac_output = os.path.join(output_dir, f"{base_name}.ac")
-        mol2_output = os.path.join(output_dir, f"{base_name}.mol2")
-        lib_output = os.path.join(output_dir, f"{base_name}.lib")
-        prepin_output = os.path.join(output_dir, f"{base_name}.prepin")
-        mc_output = os.path.join(output_dir, f"{base_name}.mc")
-        frcmod_output = os.path.join(output_dir, f"{base_name}.frcmod")
->>>>>>> 5e491f921586e2c42c0ba801adfd91fffc7c84ea
         gaff_frcmod_output = os.path.join(output_dir, f"{residue_name}_{sidechain}.frcmod")
         backbone_frcmod_output = os.path.join(output_dir, f"{residue_name}_{backbone}.frcmod")
 
         leap_script = f"""
 source leaprc.{sidechain}
 source leaprc.protein.{backbone}
-<<<<<<< HEAD
-{residue_name} = loadmol2 {input_mol2}
-=======
 {residue_name} = loadmol2 {mol2_output}
->>>>>>> 5e491f921586e2c42c0ba801adfd91fffc7c84ea
 set {residue_name} head {residue_name}.1.N
 set {residue_name} tail {residue_name}.1.C
 saveoff {residue_name} {lib_output}
@@ -60,24 +47,15 @@ quit
         ac_cmd = f"antechamber -fi mol2 -i {input_mol2} -bk {residue_name} -fo ac -o {ac_output} -c {charge} -at amber"
         if not run_cmd(ac_cmd, "Antechamber AC failed"): continue
 
-<<<<<<< HEAD
-        '''mol2_cmd = f"antechamber -fi mol2 -i {input_mol2} -bk {residue_name} -fo mol2 -o {mol2_output} -c {charge} -at amber"
-        if not run_cmd(mol2_cmd, "Antechamber MOL2 failed"): continue'''
-=======
         mol2_cmd = f"antechamber -fi mol2 -i {input_mol2} -bk {residue_name} -fo mol2 -o {mol2_output} -c {charge} -at amber"
         if not run_cmd(mol2_cmd, "Antechamber MOL2 failed"): continue
->>>>>>> 5e491f921586e2c42c0ba801adfd91fffc7c84ea
 
         with open(leap_file, 'w') as f:
             f.write(leap_script)
         if not run_cmd(f"tleap -f {leap_file}", "tleap failed"): continue
 
         try:
-<<<<<<< HEAD
-            process_mol2_file(input_mol2, mc_output)
-=======
             process_mol2_file(mol2_output, mc_output)
->>>>>>> 5e491f921586e2c42c0ba801adfd91fffc7c84ea
         except Exception as e:
             print(f"MC generation failed: {e}")
             continue
@@ -99,8 +77,4 @@ quit
         else:
             continue
 
-<<<<<<< HEAD
         print(f"\n\033[1mParameter Generation Successful for: {residue_name}\033[0m")
-=======
-        print(f"\n\033[1mParameter Generation Successful for: {base_name}\033[0m")
->>>>>>> 5e491f921586e2c42c0ba801adfd91fffc7c84ea
