@@ -75,7 +75,7 @@ class NonStandardAminoAcidProcessor:
     def _process_mol2_files(self, input_paths):
         final_mol2_files = []
         for mol2_path in input_paths:
-            print(f"\nProcessing {mol2_path}")
+            print(f"Processing {mol2_path}")
             residue_folder = self.extract_residue_from_mol2(mol2_path)
             resname = os.path.splitext(os.path.basename(mol2_path))[0].upper()
 
@@ -131,7 +131,7 @@ class NonStandardAminoAcidProcessor:
 
         for pdb_path in extracted_pdbs:
             basename = os.path.basename(pdb_path)
-            # Extract only residue name from filename like ACE_B_1.pdb → ACE
+            
             resname = os.path.splitext(basename)[0].split('_')[0].upper()
 
             if resname in seen_residues:

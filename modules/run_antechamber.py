@@ -1,8 +1,10 @@
 import subprocess
 import os
 from modules.remove import process_mol2_file
+from modules.amber_to_gromacs import convert_to_gromacs
 
-def run_antechamber_for_all(mol2_files, backbone='ff19SB', sidechain='gaff2', charge='bcc'):
+
+def run_antechamber_for_all(mol2_files, backbone='ff19SB', sidechain='gaff2', charge='bcc', generate_gmx=False):
     backbone_parm_map = {
         'ff14SB': 'parm10.dat',
         'ff19SB': 'parm19.dat',
@@ -77,4 +79,16 @@ quit
         else:
             continue
 
-        print(f"\n\033[1mParameter Generation Successful for: {residue_name}\033[0m")
+        print(f"\033[1mParameter Generation Successful for: {residue_name}\033[0m")
+
+        if generate_gmx:
+            try:
+                convert_to_gromacs(
+                    mol2_file=mol2_output,
+                    frcmod_file=backbone_frcmod_output,
+                    prepin_file=prepin_output,
+                    output_dir=output_dir
+        )
+            except Exception as e:
+                print(f"GROMACS conversion failed: {e}")
+
