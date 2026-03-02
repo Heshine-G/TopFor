@@ -1,22 +1,40 @@
-# === FILE: pdb_to_mol2.py ===
-import pymol
-import os
+# modules/pdb_to_mol2.py
+from __future__ import annotations
+
 import sys
+from pathlib import Path
 
-pymol.finish_launching(['pymol', '-cq'])
+try:
+    import pymol  # type: ignore
+except Exception:
+    pymol = None
 
-if len(sys.argv) < 3:
-    print("Usage: python pdb_to_mol2.py <input_pdb_path> <output_mol2_path>")
-    sys.exit(1)
 
-input_pdb = sys.argv[1]
-output_mol2 = sys.argv[2]
+def main() -> int:
+    if pymol is None:
+        print("ERROR: PyMOL is not available in this Python environment. Install/enable PyMOL to use pdb_to_mol2.")
+        return 2
 
-if not os.path.exists(input_pdb):
-    print(f"ERROR: {input_pdb} not found!")
-    sys.exit(1)
+    pymol.finish_launching(["pymol", "-cq"])
 
-pymol.cmd.load(input_pdb, "prot")
-pymol.cmd.h_add("prot")
-pymol.cmd.save(output_mol2, "prot")
-print(f"Conversion successful: {output_mol2}")
+    if len(sys.argv) < 3:
+        print("Usage: python pdb_to_mol2.py <input_pdb_path> <output_mol2_path>")
+        return 1
+
+    input_pdb = Path(sys.argv[1]).resolve()
+    output_mol2 = Path(sys.argv[2]).resolve()
+
+    if not input_pdb.exists():
+        print(f"ERROR: {input_pdb} not found!")
+        return 1
+
+    pymol.cmd.reinitialize()  # type: ignore[attr-defined]
+    pymol.cmd.load(str(input_pdb), "prot")  # type: ignore[attr-defined]
+    pymol.cmd.h_add("prot")  # type: ignore[attr-defined]
+    pymol.cmd.save(str(output_mol2), "prot")  # type: ignore[attr-defined]
+    print(f"Conversion successful: {output_mol2}")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

@@ -1,15 +1,22 @@
-# === FILE: split_nonstandard_residues.py ===
+# modules/split_nonstandard_residues.py
+from __future__ import annotations
+
 import os
 import sys
+from pathlib import Path
 from Bio.PDB import PDBParser, Select, PDBIO
 
-# List of 20 standard amino acids
-standard_residues = {
-    'ALA', 'ARG', 'ASN', 'ASP', 'CYS',
-    'GLN', 'GLU', 'GLY', 'HIS', 'ILE',
-    'LEU', 'LYS', 'MET', 'PHE', 'PRO',
-    'SER', 'THR', 'TRP', 'TYR', 'VAL'
+
+STANDARD_RESIDUES = {
+    "ALA", "ARG", "ASN", "ASP", "CYS",
+    "GLN", "GLU", "GLY", "HIS", "ILE",
+    "LEU", "LYS", "MET", "PHE", "PRO",
+    "SER", "THR", "TRP", "TYR", "VAL",
 }
+
+# Optionally treat common histidine variants as standard if present in PDBs
+HIS_VARIANTS = {"HID", "HIE", "HIP"}
+
 
 class NonStandardSelect(Select):
     def __init__(self, target_residue):
@@ -18,32 +25,39 @@ class NonStandardSelect(Select):
     def accept_residue(self, residue):
         return residue == self.target_residue
 
-def extract_nonstandard_residues(input_pdb, output_dir):
+
+def extract_nonstandard_residues(input_pdb: str, output_dir: str, *, include_his_variants: bool = True) -> list[str]:
     parser = PDBParser(QUIET=True)
     structure = parser.get_structure("peptide", input_pdb)
 
-    os.makedirs(output_dir, exist_ok=True)
-    io = PDBIO()
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
 
-    extracted = []
+    io = PDBIO()
+    extracted: list[str] = []
+
+    std = set(STANDARD_RESIDUES)
+    if include_his_variants:
+        std |= HIS_VARIANTS
 
     for model in structure:
         for chain in model:
             for residue in chain:
-                resname = residue.get_resname()
-                if resname not in standard_residues:
+                resname = residue.get_resname().strip()
+                if resname and resname not in std:
                     res_id = f"{resname}_{chain.id}_{residue.id[1]}"
-                    output_path = os.path.join(output_dir, f"{res_id}.pdb")
+                    output_path = out / f"{res_id}.pdb"
                     io.set_structure(structure)
-                    io.save(output_path, select=NonStandardSelect(residue))
-                    extracted.append(output_path)
+                    io.save(str(output_path), select=NonStandardSelect(residue))
+                    extracted.append(str(output_path))
 
     return extracted
 
-if __name__ == "__main__":
+
+def main() -> int:
     if len(sys.argv) != 3:
         print("Usage: python split_nonstandard_residues.py <input.pdb> <output_dir>")
-        sys.exit(1)
+        return 1
 
     input_pdb = sys.argv[1]
     output_dir = sys.argv[2]
@@ -55,3 +69,8 @@ if __name__ == "__main__":
             print(f" - {p}")
     else:
         print("No non-standard residues found.")
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

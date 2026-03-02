@@ -1,124 +1,86 @@
-from modules.gromacs_templates import write_top_mdp_files
+# modules/amber_to_gromacs.py
+from __future__ import annotations
+
 import os
-from rdkit import Chem
-from rdkit.Chem import AllChem
+from pathlib import Path
+from typing import List, Dict, Tuple
 
 
-def amber_type_to_element(amber_type):
-    amber_type = amber_type.upper()
-
-    # Explicit hydrogen types
-    if amber_type.startswith('H'):
-        return 'H'
-
-    # Explicit carbon types
-    if amber_type.startswith('C'):
-        return 'C'
-
-    # Explicit nitrogen types
-    if amber_type.startswith('N'):
-        return 'N'
-
-    # Explicit oxygen types
-    if amber_type.startswith('O'):
-        return 'O'
-
-    # Sulfur
-    if amber_type.startswith('S'):
-        return 'S'
-
-    # Safe fallback
-    return 'C'
-
-
-
-def parse_mol2_atoms_and_write_clean(mol2_file, cleaned_file):
-    atoms = []
-
-    with open(mol2_file) as f:
-        lines = f.readlines()
-
+def _parse_mol2_atoms_coords(mol2_file: str) -> List[Dict]:
+    atoms: List[Dict] = []
     in_atoms = False
-    with open(cleaned_file, 'w') as out:
-        for line in lines:
-            if line.strip().startswith("@<TRIPOS>ATOM"):
+    with open(mol2_file, "r", encoding="utf-8", errors="replace") as f:
+        for line in f:
+            s = line.strip()
+            if s.startswith("@<TRIPOS>ATOM"):
                 in_atoms = True
-                out.write(line)
                 continue
-            elif line.strip().startswith("@<TRIPOS>BOND"):
-                in_atoms = False
-                out.write(line)
+            if s.startswith("@<TRIPOS>") and in_atoms:
+                break
+            if not in_atoms or not s:
                 continue
 
-            if in_atoms:
-                parts = line.split()
-                if len(parts) < 9:
-                    continue
-
-                atom_id, atom_name = parts[0], parts[1]
-                x, y, z = parts[2:5]
-                amber_type = parts[5]
-                subst_id, subst_name = parts[6], parts[7]
-                charge = parts[8]
-
-                element = amber_type_to_element(amber_type)
-
-                out.write(
-                    f"{atom_id:>7} {atom_name:<4} {x:>10} {y:>10} {z:>10} "
-                    f"{element:<6} {subst_id} {subst_name} {charge}\n"
-                )
-
-                atoms.append({
-                    "id": int(atom_id),
-                    "name": atom_name,
-                    "type": amber_type,
-                    "charge": float(charge),
-                })
-            else:
-                out.write(line)
-
+            parts = line.split()
+            # id name x y z type subst_id subst_name charge
+            if len(parts) < 9:
+                continue
+            atom_id = int(parts[0])
+            name = parts[1]
+            x, y, z = float(parts[2]), float(parts[3]), float(parts[4])
+            atype = parts[5]
+            charge = float(parts[8])
+            atoms.append({"id": atom_id, "name": name, "type": atype, "x": x, "y": y, "z": z, "charge": charge})
+    if not atoms:
+        raise ValueError("No atoms parsed from MOL2 (missing @<TRIPOS>ATOM?)")
     return atoms
 
 
-def get_pairs(mol):
-    pairs = set()
-    for atom in mol.GetAtoms():
-        neighbors = [n.GetIdx() for n in atom.GetNeighbors()]
-        for i in neighbors:
-            for j in mol.GetAtomWithIdx(i).GetNeighbors():
-                if j.GetIdx() == atom.GetIdx():
-                    continue
-                for k in j.GetNeighbors():
-                    if k.GetIdx() in neighbors or k.GetIdx() == atom.GetIdx():
-                        continue
-                    pairs.add(tuple(sorted([atom.GetIdx() + 1, k.GetIdx() + 1])))
-    return sorted(pairs)
+def _parse_mol2_bonds(mol2_file: str) -> List[Tuple[int, int]]:
+    bonds: List[Tuple[int, int]] = []
+    in_bonds = False
+    with open(mol2_file, "r", encoding="utf-8", errors="replace") as f:
+        for line in f:
+            s = line.strip()
+            if s.startswith("@<TRIPOS>BOND"):
+                in_bonds = True
+                continue
+            if s.startswith("@<TRIPOS>") and in_bonds:
+                break
+            if not in_bonds or not s:
+                continue
+            parts = line.split()
+            if len(parts) < 4:
+                continue
+            a1 = int(parts[1])
+            a2 = int(parts[2])
+            bonds.append((a1, a2))
+    return bonds
 
 
-def convert_to_gromacs(mol2_file, frcmod_file, prepin_file, output_dir):
-    base = os.path.splitext(os.path.basename(mol2_file))[0]
+def convert_to_gromacs_best_effort(mol2_file: str, output_dir: str, residue_name: str) -> None:
+    """
+    Best-effort structure export:
+    - Writes .gro coordinates from MOL2 coordinates (no RDKit re-embedding!)
+    - Writes a minimal .itp with atom list + bonds ONLY.
+      (This is structure-level, not a full parameterized topology.)
 
-    cleaned_mol2 = os.path.join(output_dir, f"{base}_cleaned_for_rdkit.mol2")
-    atoms_info = parse_mol2_atoms_and_write_clean(mol2_file, cleaned_mol2)
+    Thesis-friendly honesty:
+    - Full parameter export should be done via prmtop->gromacs (e.g., ParmEd),
+      which you can add as an optional dependency.
+    """
+    out = Path(output_dir)
+    out.mkdir(parents=True, exist_ok=True)
 
-    mol = Chem.MolFromMol2File(cleaned_mol2, removeHs=False)
-    if mol is None:
-        raise RuntimeError("RDKit failed to load MOL2")
+    atoms = _parse_mol2_atoms_coords(mol2_file)
+    bonds = _parse_mol2_bonds(mol2_file)
 
-    AllChem.EmbedMolecule(mol)
-    conf = mol.GetConformer()
+    gro_path = out / f"{residue_name}.gro"
+    itp_path = out / f"{residue_name}.itp"
 
-    itp_path = os.path.join(output_dir, f"{base}.itp")
-    gro_path = os.path.join(output_dir, f"{base}.gro")
-
-    
-    coords = []
-    for i in range(mol.GetNumAtoms()):
-        p = conf.GetAtomPosition(i)
-        coords.append((p.x / 10.0, p.y / 10.0, p.z / 10.0))
-
-    xs, ys, zs = zip(*coords)
-    padding = 1.2
+    # MOL2 coords are in Angstrom; GROMACS uses nm
+    coords_nm = [(a["x"] / 10.0, a["y"] / 10.0, a["z"] / 10.0) for a in atoms]
+    xs, ys, zs = zip(*coords_nm)
+    padding = 1.2  # nm
 
     min_x, max_x = min(xs), max(xs)
     min_y, max_y = min(ys), max(ys)
@@ -132,64 +94,34 @@ def convert_to_gromacs(mol2_file, frcmod_file, prepin_file, output_dir):
     shift_y = -min_y + padding
     shift_z = -min_z + padding
 
-    
-    with open(gro_path, "w") as gro:
-        gro.write(f"{base}\n")
-        gro.write(f"{mol.GetNumAtoms():5d}\n")
-
-        for i, (x, y, z) in enumerate(coords):
-            atom_name = atoms_info[i]["name"][:5]
-
+    # Write .gro
+    with gro_path.open("w", encoding="utf-8") as gro:
+        gro.write(f"{residue_name}\n")
+        gro.write(f"{len(atoms):5d}\n")
+        for i, (a, (x, y, z)) in enumerate(zip(atoms, coords_nm), start=1):
+            atom_name = a["name"][:5]
             gro.write(
-                f"{1:5d}{base:<5}{atom_name:>5}{i+1:5d}"
-                f"{x+shift_x:8.3f}{y+shift_y:8.3f}{z+shift_z:8.3f}\n"
+                f"{1:5d}{residue_name:<5}{atom_name:>5}{i:5d}"
+                f"{x + shift_x:8.3f}{y + shift_y:8.3f}{z + shift_z:8.3f}\n"
             )
-
         gro.write(f"{box_x:10.5f}{box_y:10.5f}{box_z:10.5f}\n")
 
-    
-    with open(itp_path, "w") as itp:
-        itp.write("; Generated from AMBER parameters\n")
-        itp.write("; Requires AMBER-compatible force field\n\n")
+    # Write minimal .itp (structure only)
+    with itp_path.open("w", encoding="utf-8") as itp:
+        itp.write("; nsaa-paramgen: structure-only ITP (no parameters)\n")
+        itp.write("; For full parameters: export from AMBER prmtop using ParmEd (recommended).\n\n")
 
         itp.write("[ moleculetype ]\n")
-        itp.write(f"{base} 3\n\n")
+        itp.write(f"{residue_name} 3\n\n")
 
         itp.write("[ atoms ]\n")
-        for i, atom in enumerate(mol.GetAtoms()):
-            data = atoms_info[i]
+        for i, a in enumerate(atoms, start=1):
             itp.write(
-                f"{i+1:<5} {data['type']:<6} 1 {base:<4} "
-                f"{data['name']:<4} {i+1:<5} "
-                f"{data['charge']:8.4f} {atom.GetMass():.4f}\n"
+                f"{i:<5} {a['type']:<8} 1 {residue_name:<6} {a['name']:<6} {i:<5} {a['charge']:10.6f} 0.0000\n"
             )
 
         itp.write("\n[ bonds ]\n")
-        for b in mol.GetBonds():
-            itp.write(
-                f"{b.GetBeginAtomIdx()+1:<5} {b.GetEndAtomIdx()+1:<5} 1\n"
-            )
+        for a1, a2 in bonds:
+            itp.write(f"{a1:<5} {a2:<5} 1\n")
 
-        
-
-        itp.write("\n[ dihedrals ]\n")
-        for b in mol.GetBonds():
-            a1, a2 = b.GetBeginAtom(), b.GetEndAtom()
-            for n1 in a1.GetNeighbors():
-                if n1.GetIdx() == a2.GetIdx():
-                    continue
-                for n2 in a2.GetNeighbors():
-                    if n2.GetIdx() in (a1.GetIdx(), n1.GetIdx()):
-                        continue
-                    itp.write(
-                        f"{n1.GetIdx()+1:<5} {a1.GetIdx()+1:<5} "
-                        f"{a2.GetIdx()+1:<5} {n2.GetIdx()+1:<5} 1\n"
-                    )
-
-        itp.write("\n[ pairs ]\n")
-        itp.write("; 1-4 interactions\n")
-        for i, j in get_pairs(mol):
-            itp.write(f"{i:<5} {j:<5}\n")
-
-    write_top_mdp_files(output_dir, base)
     print(f"GROMACS files written: {gro_path}, {itp_path}")

@@ -1,94 +1,139 @@
-import subprocess
+# modules/run_antechamber.py
+from __future__ import annotations
+
 import os
+import json
+import subprocess
+import time
+from pathlib import Path
+
 from modules.remove import process_mol2_file
-from modules.amber_to_gromacs import convert_to_gromacs
+from modules.utils import detect_formal_charge_from_mol2
 
 
-def run_antechamber_for_all(mol2_files, backbone='ff19SB', sidechain='gaff2', charge='bcc', generate_gmx=False):
-    backbone_parm_map = {
-        'ff14SB': 'parm10.dat',
-        'ff19SB': 'parm19.dat',
-        'ff99SB': 'parm99.dat'
-    }
+def _run(cmd, cwd: Path, log_file: Path):
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd=str(cwd))
+    log_file.write_text(result.stdout + "\n" + result.stderr)
+    return result.returncode == 0
+
+
+def _read_net_charge_for_residue(residue_dir: Path, mol2_path: Path) -> tuple[int, str]:
+    """
+    Priority:
+      1) residue_meta.json net_charge
+      2) detect formal charge from MOL2 (RDKit) as a fallback
+      3) 0 as last fallback
+    """
+    meta = residue_dir / "residue_meta.json"
+    if meta.exists():
+        try:
+            data = json.loads(meta.read_text(encoding="utf-8"))
+            if "net_charge" in data:
+                return int(data["net_charge"]), "meta"
+        except Exception:
+            pass
+
+    detected = detect_formal_charge_from_mol2(str(mol2_path))
+    if detected is not None:
+        return int(detected), "detected_formal"
+
+    return 0, "fallback_0"
+
+
+def run_antechamber_for_all(
+    mol2_files: list[str],
+    backbone: str = "ff19SB",
+    sidechain: str = "gaff2",
+    charge: str = "bcc",   # kept for compatibility, but AC step will use -c rc to preserve charges
+    generate_gmx: bool = False,
+):
+    amberhome = os.environ.get("AMBERHOME")
+    if not amberhome:
+        print("AMBERHOME not set.")
+        return
 
     for input_mol2 in mol2_files:
-        base_name = os.path.splitext(os.path.basename(input_mol2))[0]
-        # Extract only the residue name (remove chain ID, position)
-        residue_name = base_name.split('_')[0].upper()
-        output_dir = residue_name
-        os.makedirs(output_dir, exist_ok=True)
+        start_time = time.perf_counter()
 
-        ac_output = os.path.join(output_dir, f"{residue_name}.ac")
-        mol2_output = os.path.join(output_dir, f"{residue_name}.mol2")
-        lib_output = os.path.join(output_dir, f"{residue_name}.lib")
-        prepin_output = os.path.join(output_dir, f"{residue_name}.prepin")
-        mc_output = os.path.join(output_dir, f"{residue_name}.mc")
-        frcmod_output = os.path.join(output_dir, f"{residue_name}.frcmod")
-        gaff_frcmod_output = os.path.join(output_dir, f"{residue_name}_{sidechain}.frcmod")
-        backbone_frcmod_output = os.path.join(output_dir, f"{residue_name}_{backbone}.frcmod")
+        mol2_path = Path(input_mol2).resolve()
+        residue_dir = mol2_path.parent
+        resname = mol2_path.stem.upper()
 
-        leap_script = f"""
+        log_file = residue_dir / f"{resname}.log"
+
+        ac_file = residue_dir / f"{resname}.ac"
+        mc_file = residue_dir / f"{resname}.mc"
+        prepin_file = residue_dir / f"{resname}.prepin"
+        lib_file = residue_dir / f"{resname}.lib"
+        frcmod_gaff = residue_dir / f"{resname}_{sidechain}.frcmod"
+        frcmod_backbone = residue_dir / f"{resname}_{backbone}.frcmod"
+
+        net_charge, charge_source = _read_net_charge_for_residue(residue_dir, mol2_path)
+        print(f"[{resname}] using net charge = {net_charge} (source: {charge_source})")
+
+        # 1) AC generation
+        
+        cmd = [
+            "antechamber",
+            "-fi", "mol2",
+            "-i", mol2_path.name,
+            "-bk", resname,
+            "-fo", "ac",
+            "-o", ac_file.name,
+                      # <-- preserve existing charges
+            "-at", "amber",
+            "-nc", str(net_charge),
+        ]
+        if not _run(cmd, residue_dir, log_file):
+            print(f"{resname} failed at AC generation.")
+            continue
+
+        # 2) MC generation
+        # IMPORTANT: CHARGE in the mc file must match net_charge (not hardcoded 0).
+        process_mol2_file(
+            str(mol2_path),
+            str(mc_file),
+            head_name="N",
+            tail_name="C",
+            main_chain=["CA"],
+            charge=float(net_charge),   # <-- FIX
+        )
+
+        # 3) prepgen
+        cmd = [
+            "prepgen",
+            "-i", ac_file.name,
+            "-o", prepin_file.name,
+            "-m", mc_file.name,
+            "-rn", resname,
+        ]
+        if not _run(cmd, residue_dir, log_file):
+            print(f"{resname} failed at prepgen.")
+            continue
+
+        # 4) tleap
+        leap_script = residue_dir / "leap.in"
+        leap_script.write_text(
+            f"""
 source leaprc.{sidechain}
 source leaprc.protein.{backbone}
-{residue_name} = loadmol2 {mol2_output}
-set {residue_name} head {residue_name}.1.N
-set {residue_name} tail {residue_name}.1.C
-saveoff {residue_name} {lib_output}
+{resname} = loadmol2 {mol2_path.name}
+saveoff {resname} {lib_file.name}
 quit
-"""
-        leap_file = os.path.join(output_dir, "leap.in")
-
-        def run_cmd(cmd, error_msg):
-            result = subprocess.run(cmd, shell=True, capture_output=True, text=True)
-            if result.returncode != 0:
-                print(f"{error_msg}: {result.stderr.strip()}")
-                return False
-            return True
-
-        # Use dynamic charge model in both antechamber steps
-        ac_cmd = f"antechamber -fi mol2 -i {input_mol2} -bk {residue_name} -fo ac -o {ac_output} -c {charge} -at amber"
-        if not run_cmd(ac_cmd, "Antechamber AC failed"): continue
-
-        mol2_cmd = f"antechamber -fi mol2 -i {input_mol2} -bk {residue_name} -fo mol2 -o {mol2_output} -c {charge} -at amber"
-        if not run_cmd(mol2_cmd, "Antechamber MOL2 failed"): continue
-
-        with open(leap_file, 'w') as f:
-            f.write(leap_script)
-        if not run_cmd(f"tleap -f {leap_file}", "tleap failed"): continue
-
-        try:
-            process_mol2_file(mol2_output, mc_output)
-        except Exception as e:
-            print(f"MC generation failed: {e}")
-            continue
-
-        prep_cmd = f"prepgen -i {ac_output} -o {prepin_output} -m {mc_output} -rn {residue_name}"
-        if not run_cmd(prep_cmd, "prepgen failed"): continue
-
-        parm_file = backbone_parm_map.get(backbone, 'parm10.dat')
-        parmchk_backbone = f"parmchk2 -i {ac_output} -f ac -o {backbone_frcmod_output} -a Y -p $AMBERHOME/dat/leap/parm/{parm_file}"
-        parmchk_sidechain = f"parmchk2 -i {ac_output} -f ac -o {gaff_frcmod_output} -a Y -p $AMBERHOME/dat/leap/parm/{sidechain}.dat"
-
-        if run_cmd(parmchk_backbone, "parmchk2 backbone failed"):
-            print(f"Successfully generated backbone FRCMOD: {backbone_frcmod_output}")
-        else:
-            continue
-
-        if run_cmd(parmchk_sidechain, "parmchk2 sidechain failed"):
-            print(f"Successfully generated sidechain FRCMOD: {gaff_frcmod_output}")
-        else:
-            continue
-
-        print(f"\033[1mParameter Generation Successful for: {residue_name}\033[0m")
-
-        if generate_gmx:
-            try:
-                convert_to_gromacs(
-                    mol2_file=mol2_output,
-                    frcmod_file=backbone_frcmod_output,
-                    prepin_file=prepin_output,
-                    output_dir=output_dir
+""".strip()
+            + "\n",
+            encoding="utf-8",
         )
-            except Exception as e:
-                print(f"GROMACS conversion failed: {e}")
 
+        if not _run(["tleap", "-f", leap_script.name], residue_dir, log_file):
+            print(f"{resname} failed at tleap.")
+            continue
+
+        # 5) parmchk2
+        _run(["parmchk2", "-i", ac_file.name, "-f", "ac", "-o", frcmod_gaff.name], residue_dir, log_file)
+        _run(["parmchk2", "-i", ac_file.name, "-f", "ac", "-o", frcmod_backbone.name], residue_dir, log_file)
+
+        total_time = time.perf_counter() - start_time
+
+        print(f"\033[1m\n{resname} parametrization complete\033[0m")
+        print(f"Time taken: {total_time:.2f} s\n")
