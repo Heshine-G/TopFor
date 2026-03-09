@@ -1,4 +1,3 @@
-# modules/pdb_to_mol2.py
 from __future__ import annotations
 
 import sys
@@ -30,6 +29,7 @@ def main() -> int:
 
     pymol.cmd.reinitialize()  # type: ignore[attr-defined]
     pymol.cmd.load(str(input_pdb), "prot")  # type: ignore[attr-defined]
+    pymol.cmd.remove("hydro")  # type: ignore[attr-defined]
     pymol.cmd.h_add("prot")  # type: ignore[attr-defined]
     pymol.cmd.save(str(output_mol2), "prot")  # type: ignore[attr-defined]
     print(f"Conversion successful: {output_mol2}")

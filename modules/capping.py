@@ -1,11 +1,9 @@
-# modules/capping.py
 from __future__ import annotations
 
-import os
+import json
 import sys
 from pathlib import Path
 
-# PyMOL is optional but required for this step
 try:
     import pymol  # type: ignore
 except Exception:
@@ -13,25 +11,26 @@ except Exception:
 
 
 def _safe_unique_rename(selection: str, prefix: str) -> None:
-    """
-    Rename atoms in 'selection' to a stable prefix-based scheme to reduce collisions.
-    We keep names <= 4 chars where possible (GROMACS-friendly too).
-    """
-    # Collect atom names in selection
-    names = pymol.cmd.get_model(selection).atom  # type: ignore[attr-defined]
+    atoms = pymol.cmd.get_model(selection).atom  # type: ignore[attr-defined]
     used = set()
 
-    # First pass: rename by element-like first char, plus index
-    for i, atom in enumerate(names, start=1):
+    for i, atom in enumerate(atoms, start=1):
         newname = f"{prefix}{i}"
-        # keep <=4 chars if possible (e.g. AC1, AC2, NM1 ...)
         if len(newname) > 4:
             newname = newname[:4]
-        # ensure uniqueness (very defensive)
         while newname in used:
-            newname = (newname[:3] + str((i % 10))).ljust(4)[:4]
+            newname = (newname[:3] + str(i % 10)).ljust(4)[:4]
         used.add(newname)
         pymol.cmd.alter(f"{selection} and id {atom.id}", f"name='{newname}'")  # type: ignore[attr-defined]
+
+
+def _normalize_name_arg(value: str | None) -> str | None:
+    if value is None:
+        return None
+    s = str(value).strip()
+    if not s or s.upper() in {"NONE", "NULL", "0"}:
+        return None
+    return s
 
 
 def main() -> int:
@@ -42,12 +41,16 @@ def main() -> int:
     pymol.finish_launching(["pymol", "-cq"])
 
     if len(sys.argv) < 2:
-        print("Usage: python capping.py <residue_folder>")
+        print("Usage: python capping.py <residue_folder> [head_name|NONE] [tail_name|NONE]")
         return 1
 
     residue_folder = Path(sys.argv[1]).resolve()
+    head_name = _normalize_name_arg(sys.argv[2] if len(sys.argv) >= 3 else "N")
+    tail_name = _normalize_name_arg(sys.argv[3] if len(sys.argv) >= 4 else "C")
+
     input_file = residue_folder / "residue.mol2"
     output_file = residue_folder / "residue_capped.mol2"
+    meta_file = residue_folder / "residue_capping_meta.json"
 
     if not input_file.exists():
         print(f"ERROR: {input_file} not found!")
@@ -56,28 +59,46 @@ def main() -> int:
     pymol.cmd.reinitialize()  # type: ignore[attr-defined]
     pymol.cmd.load(str(input_file), "prot")  # type: ignore[attr-defined]
 
-    # remove existing terminal markers/hydrogens then re-add later
     pymol.cmd.remove("hydro")  # type: ignore[attr-defined]
     pymol.cmd.remove("name OXT")  # type: ignore[attr-defined]
 
-    # Attach ACE to N terminus if N exists
-    pymol.cmd.select("pk1", "name N")  # type: ignore[attr-defined]
-    if pymol.cmd.count_atoms("pk1") > 0:  # type: ignore[attr-defined]
-        pymol.cmd.editor.attach_amino_acid("pk1", "ace")  # type: ignore[attr-defined]
-        # Rename ACE atoms to AC*
-        _safe_unique_rename("resn ACE", "AC")
+    applied_caps: list[str] = []
+    found_head = False
+    found_tail = False
 
-    # Attach NME to C terminus if carbonyl C exists (not the ACE carbon)
-    pymol.cmd.select("pk1", "name C and not resn ACE")  # type: ignore[attr-defined]
-    if pymol.cmd.count_atoms("pk1") > 0:  # type: ignore[attr-defined]
-        pymol.cmd.editor.attach_amino_acid("pk1", "nme")  # type: ignore[attr-defined]
-        _safe_unique_rename("resn NME", "NM")
+    if head_name:
+        head_sel = f"name {head_name}"
+        pymol.cmd.select("pk1", head_sel)  # type: ignore[attr-defined]
+        found_head = pymol.cmd.count_atoms("pk1") > 0  # type: ignore[attr-defined]
+        if found_head:
+            pymol.cmd.editor.attach_amino_acid("pk1", "ace")  # type: ignore[attr-defined]
+            _safe_unique_rename("resn ACE", "AC")
+            applied_caps.append("ACE")
+
+    if tail_name:
+        tail_sel = f"name {tail_name} and not resn ACE"
+        pymol.cmd.select("pk1", tail_sel)  # type: ignore[attr-defined]
+        found_tail = pymol.cmd.count_atoms("pk1") > 0  # type: ignore[attr-defined]
+        if found_tail:
+            pymol.cmd.editor.attach_amino_acid("pk1", "nme")  # type: ignore[attr-defined]
+            _safe_unique_rename("resn NME", "NM")
+            applied_caps.append("NME")
 
     pymol.cmd.h_add("prot")  # type: ignore[attr-defined]
     pymol.cmd.save(str(output_file), "prot")  # type: ignore[attr-defined]
 
+    meta = {
+        "requested_head_name": head_name,
+        "requested_tail_name": tail_name,
+        "has_head": bool(found_head),
+        "has_tail": bool(found_tail),
+        "applied_caps": applied_caps,
+    }
+    meta_file.write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
     if output_file.exists() and output_file.stat().st_size > 0:
         print(f"Capping successful: {output_file}")
+        print(json.dumps(meta))
         return 0
 
     print(f"ERROR: PyMOL failed to create {output_file}!")
