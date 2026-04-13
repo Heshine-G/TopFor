@@ -5,6 +5,8 @@ from pathlib import Path
 from collections import Counter, deque
 from typing import Dict, List, Tuple, Optional, Set
 
+from .utils import normalize_resname
+
 
 @dataclass(frozen=True)
 class Mol2Atom:
@@ -109,12 +111,7 @@ def _shortest_path(graph: Dict[int, Set[int]], start: int, goal: int) -> Optiona
     return None
 
 
-def _looks_like_c_or_n_atom(atom: Mol2Atom) -> bool:
-    """
-    Use BOTH atom name and atom type, because different MOL2 writers vary.
-    Accept common carbon/nitrogen names/types such as:
-      C, CA, CB, CG, C1, C2, N, N1, ND, NE, NT, etc.
-    """
+def _looks_like_backbone_candidate(atom: Mol2Atom) -> bool:
     name = atom.name.upper()
     atype = atom.atom_type.upper()
 
@@ -139,15 +136,6 @@ def _dedupe_preserve_order(items: List[str]) -> List[str]:
 
 
 def _select_anchor_atom(atoms: List[Mol2Atom]) -> Optional[str]:
-    """
-    Last-resort fallback if no C/N atoms are found.
-
-    Priority:
-    1. atom name starts with C
-    2. atom type starts with C
-    3. any heavy atom except oxygen
-    4. any heavy atom
-    """
     for a in atoms:
         if a.name.upper().startswith("C"):
             return a.name
@@ -167,21 +155,17 @@ def _select_anchor_atom(atoms: List[Mol2Atom]) -> Optional[str]:
     return None
 
 
-def _collect_cn_mainchain_atoms(
+def _collect_backbone_candidates(
     atoms: List[Mol2Atom],
     *,
     exclude_names: Set[str],
 ) -> List[str]:
-    """
-    For residues where head and/or tail are absent:
-    MAIN_CHAIN should contain all C and N atoms other than head/tail.
-    """
     names: List[str] = []
 
     for atom in atoms:
         if atom.name in exclude_names:
             continue
-        if _looks_like_c_or_n_atom(atom):
+        if _looks_like_backbone_candidate(atom):
             names.append(atom.name)
 
     return _dedupe_preserve_order(names)
@@ -201,26 +185,49 @@ def process_mol2_file(
     post_tail_type: str = "N",
     infer_mainchain_from_connectivity: bool = True,
 ) -> str:
+    """
+    Write a prepgen .mc file with Amber-compatible semantics.
+
+    Rules implemented here:
+    - HEAD_NAME is written only if the head atom is present.
+    - TAIL_NAME is written only if the tail atom is present.
+    - PRE_HEAD_TYPE is written only if HEAD_NAME is present.
+    - POST_TAIL_TYPE is written only if TAIL_NAME is present.
+    - MAIN_CHAIN prefers the shortest path between head and tail, excluding head/tail.
+      This gives:
+        alpha:  N-CA-C      -> CA
+        beta:   N-CA-CB-C   -> CA CB
+        gamma+: N-...-C     -> all bridge atoms
+    - OMIT_NAME contains atoms belonging to applied caps.
+    - Cap-only molecules are handled gracefully.
+    """
     atoms = _parse_mol2_atoms(file_path)
     bonds = _parse_mol2_bonds(file_path)
 
-    cap_set = {c.upper() for c in cap_resnames}
+    norm_cap_set = {normalize_resname(c) for c in cap_resnames}
 
-    subst_counts = Counter(a.subst_name for a in atoms if a.subst_name.upper() not in cap_set)
+    non_cap_atoms = [a for a in atoms if normalize_resname(a.subst_name) not in norm_cap_set]
+    subst_counts = Counter(normalize_resname(a.subst_name) for a in non_cap_atoms)
+
     if central_resname is None:
-        if not subst_counts:
-            raise ValueError("Could not infer central residue name from MOL2.")
-        central_resname = subst_counts.most_common(1)[0][0]
+        if subst_counts:
+            central_resname = subst_counts.most_common(1)[0][0]
+        else:
+            # Cap-only molecule (e.g. ACE as standalone input) fallback.
+            central_resname = normalize_resname(atoms[0].subst_name) if atoms else "UNK"
 
-    central_atoms = [
-        a for a in atoms
-        if a.subst_name.upper() not in cap_set and a.subst_name == central_resname
-    ]
+    central_resname = normalize_resname(central_resname)
+
+    if subst_counts:
+        central_atoms = [a for a in atoms if normalize_resname(a.subst_name) == central_resname]
+    else:
+        # If all atoms belong to the cap residue, treat the entire molecule as central.
+        central_atoms = list(atoms)
 
     if not central_atoms:
         raise ValueError(f"No central residue atoms found for residue '{central_resname}'.")
 
-    omit_atom_names = [a.name for a in atoms if a.subst_name.upper() in cap_set]
+    omit_atom_names = [a.name for a in atoms if normalize_resname(a.subst_name) in norm_cap_set and a not in central_atoms]
 
     id_to_atom = {a.atom_id: a for a in central_atoms}
 
@@ -239,56 +246,47 @@ def process_mol2_file(
 
     mainchain_names: List[str] = []
 
-    # 1) Explicit user-defined mainchain always wins
+    # 1) Explicit user-defined mainchain always wins.
     if main_chain:
         mainchain_names = [x for x in main_chain if x in name_to_ids]
 
-    # 2) Standard polymeric case: both head and tail exist
+    # 2) Preferred Amber polymer rule: path between head and tail.
     elif infer_mainchain_from_connectivity and has_head and has_tail:
         head_id = name_to_ids[head_name][0]
         tail_id = name_to_ids[tail_name][0]
-
         path = _shortest_path(graph, head_id, tail_id)
 
         if path and len(path) >= 3:
             path_names = [id_to_atom[i].name for i in path]
+            mainchain_names = [n for n in path_names if n != head_name and n != tail_name]
 
-            # HEAD_NAME and TAIL_NAME must NOT appear in MAIN_CHAIN
-            mainchain_names = [
-                n for n in path_names
-                if n != head_name and n != tail_name
-            ]
-
-    # 3) If head and/or tail are absent:
-    #    MAIN_CHAIN = all C/N atoms except head/tail
-    if not mainchain_names and ((not has_head) or (not has_tail)):
+    # 3) If one terminus is missing, do not invent head/tail lines.
+    #    For these cases we keep a conservative fallback for MAIN_CHAIN so prepgen still has guidance.
+    if not mainchain_names and (has_head or has_tail):
         exclude_names: Set[str] = set()
         if has_head and head_name:
             exclude_names.add(head_name)
         if has_tail and tail_name:
             exclude_names.add(tail_name)
+        mainchain_names = _collect_backbone_candidates(central_atoms, exclude_names=exclude_names)
 
-        mainchain_names = _collect_cn_mainchain_atoms(
-            central_atoms,
-            exclude_names=exclude_names,
-        )
-
-    # 4) Final fallback
+    # 4) Final fallback for carbocyclic / unusual residues.
     if not mainchain_names:
         anchor = _select_anchor_atom(central_atoms)
         if anchor:
             mainchain_names = [anchor]
 
     mainchain_names = _dedupe_preserve_order(mainchain_names)
+    omit_atom_names = _dedupe_preserve_order(omit_atom_names)
 
     out = Path(output_file)
     out.parent.mkdir(parents=True, exist_ok=True)
 
     with out.open("w", encoding="utf-8") as fh:
-        if has_head:
+        if has_head and head_name:
             fh.write(f"HEAD_NAME {head_name}\n")
 
-        if has_tail:
+        if has_tail and tail_name:
             fh.write(f"TAIL_NAME {tail_name}\n")
 
         for mc in mainchain_names:

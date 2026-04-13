@@ -7,7 +7,12 @@ import time
 from pathlib import Path
 
 from modules.remove import process_mol2_file
-from modules.utils import detect_formal_charge_from_mol2
+from modules.utils import (
+    classify_residue_net_charge,
+    normalize_resname,
+    fix_backbone_atom_types_in_ac,
+    fix_backbone_atom_types_in_prepin,
+)
 
 
 def _run(cmd, cwd: Path, log_file: Path) -> bool:
@@ -26,14 +31,39 @@ def _run(cmd, cwd: Path, log_file: Path) -> bool:
     return result.returncode == 0
 
 
-def _read_residue_meta(residue_dir: Path) -> dict:
-    meta = residue_dir / "residue_meta.json"
-    if not meta.exists():
+def _read_json_if_exists(path: Path) -> dict:
+    if not path.exists():
         return {}
     try:
-        return json.loads(meta.read_text(encoding="utf-8"))
+        return json.loads(path.read_text(encoding="utf-8"))
     except Exception:
         return {}
+
+
+def _read_residue_meta(residue_dir: Path) -> dict:
+    residue_meta = _read_json_if_exists(residue_dir / "residue_meta.json")
+    capping_meta = _read_json_if_exists(residue_dir / "residue_capping_meta.json")
+
+    if residue_meta:
+        if capping_meta:
+            residue_meta.setdefault("requested_head_name", capping_meta.get("requested_head_name"))
+            residue_meta.setdefault("requested_tail_name", capping_meta.get("requested_tail_name"))
+            residue_meta.setdefault("has_head", capping_meta.get("has_head"))
+            residue_meta.setdefault("has_tail", capping_meta.get("has_tail"))
+            residue_meta.setdefault("applied_caps", capping_meta.get("applied_caps", []))
+        return residue_meta
+
+    if capping_meta:
+        return {
+            "head_name": capping_meta.get("requested_head_name"),
+            "tail_name": capping_meta.get("requested_tail_name"),
+            "main_chain": None,
+            "pre_head_type": "C",
+            "post_tail_type": "N",
+            "applied_caps": capping_meta.get("applied_caps", []),
+        }
+
+    return {}
 
 
 def _read_net_charge_for_residue(residue_dir: Path, mol2_path: Path) -> tuple[int, str]:
@@ -41,9 +71,9 @@ def _read_net_charge_for_residue(residue_dir: Path, mol2_path: Path) -> tuple[in
     if "net_charge" in data:
         return int(data["net_charge"]), "meta"
 
-    detected = detect_formal_charge_from_mol2(str(mol2_path))
-    if detected is not None:
-        return int(detected), "detected_formal"
+    classified, source = classify_residue_net_charge(str(mol2_path), resname=normalize_resname(mol2_path.stem))
+    if classified is not None:
+        return int(classified), source
 
     return 0, "fallback_0"
 
@@ -83,7 +113,7 @@ def run_antechamber_for_all(
 
         mol2_path = Path(input_mol2).resolve()
         residue_dir = mol2_path.parent
-        resname = mol2_path.stem.upper()
+        resname = normalize_resname(mol2_path.stem)
         meta = _read_residue_meta(residue_dir)
 
         log_file = residue_dir / f"{resname}.log"
@@ -113,15 +143,18 @@ def run_antechamber_for_all(
             print(f"{resname} failed at AC generation.")
             continue
 
+        fix_backbone_atom_types_in_ac(str(ac_output))
+
         applied_caps = tuple(str(x).upper() for x in meta.get("applied_caps", []))
         process_mol2_file(
             str(mol2_path),
             str(mc_file),
-            head_name=meta.get("head_name"),
-            tail_name=meta.get("tail_name"),
+            head_name=meta.get("head_name", "N"),
+            tail_name=meta.get("tail_name", "C"),
             main_chain=meta.get("main_chain"),
             charge=float(net_charge),
-            cap_resnames=applied_caps,
+            central_resname=resname,
+            cap_resnames=applied_caps if applied_caps else ("ACE", "NME"),
             pre_head_type=str(meta.get("pre_head_type", "C")),
             post_tail_type=str(meta.get("post_tail_type", "N")),
             infer_mainchain_from_connectivity=True,
@@ -137,6 +170,9 @@ def run_antechamber_for_all(
         if not _run(prepgen_cmd, residue_dir, log_file):
             print(f"{resname} failed at prepgen.")
             continue
+
+        if fix_backbone_atom_types_in_prepin(str(prepin_file)):
+            print(f"[{resname}] corrected backbone atom types in PREPIN file")
 
         parmchk_backbone_cmd = [
             "parmchk2",

@@ -10,18 +10,42 @@ except Exception:
     pymol = None
 
 
+MAX_ATOM_NAME_LEN = 4
+
+
+def _all_atom_names(selection: str = "all") -> set[str]:
+    atoms = pymol.cmd.get_model(selection).atom  
+    return {str(atom.name).strip() for atom in atoms}
+
+
+def _make_unique_name(base: str, used: set[str]) -> str:
+    base = (base or "X")[:MAX_ATOM_NAME_LEN]
+    if base not in used:
+        return base
+
+    for i in range(1, 10000):
+        suffix = str(i)
+        prefix = base[: MAX_ATOM_NAME_LEN - len(suffix)]
+        candidate = f"{prefix}{suffix}"
+        if candidate not in used:
+            return candidate
+
+    raise RuntimeError(f"Could not generate a unique atom name from base '{base}'")
+
+
 def _safe_unique_rename(selection: str, prefix: str) -> None:
-    atoms = pymol.cmd.get_model(selection).atom  # type: ignore[attr-defined]
-    used = set()
+    atoms = pymol.cmd.get_model(selection).atom  
+    if not atoms:
+        return
+
+    used = _all_atom_names("all")
 
     for i, atom in enumerate(atoms, start=1):
-        newname = f"{prefix}{i}"
-        if len(newname) > 4:
-            newname = newname[:4]
-        while newname in used:
-            newname = (newname[:3] + str(i % 10)).ljust(4)[:4]
+        old_name = str(atom.name).strip()
+        used.discard(old_name)
+        newname = _make_unique_name(f"{prefix}{i}", used)
         used.add(newname)
-        pymol.cmd.alter(f"{selection} and id {atom.id}", f"name='{newname}'")  # type: ignore[attr-defined]
+        pymol.cmd.alter(f"{selection} and id {atom.id}", f"name='{newname}'")  
 
 
 def _normalize_name_arg(value: str | None) -> str | None:
@@ -56,11 +80,11 @@ def main() -> int:
         print(f"ERROR: {input_file} not found!")
         return 1
 
-    pymol.cmd.reinitialize()  # type: ignore[attr-defined]
-    pymol.cmd.load(str(input_file), "prot")  # type: ignore[attr-defined]
+    pymol.cmd.reinitialize()  
+    pymol.cmd.load(str(input_file), "prot")  
 
-    pymol.cmd.remove("hydro")  # type: ignore[attr-defined]
-    pymol.cmd.remove("name OXT")  # type: ignore[attr-defined]
+    pymol.cmd.remove("hydro")  
+    pymol.cmd.remove("name OXT")  
 
     applied_caps: list[str] = []
     found_head = False
@@ -68,24 +92,24 @@ def main() -> int:
 
     if head_name:
         head_sel = f"name {head_name}"
-        pymol.cmd.select("pk1", head_sel)  # type: ignore[attr-defined]
-        found_head = pymol.cmd.count_atoms("pk1") > 0  # type: ignore[attr-defined]
+        pymol.cmd.select("pk1", head_sel)  
+        found_head = pymol.cmd.count_atoms("pk1") > 0  
         if found_head:
-            pymol.cmd.editor.attach_amino_acid("pk1", "ace")  # type: ignore[attr-defined]
+            pymol.cmd.editor.attach_amino_acid("pk1", "ace")  
             _safe_unique_rename("resn ACE", "AC")
             applied_caps.append("ACE")
 
     if tail_name:
         tail_sel = f"name {tail_name} and not resn ACE"
-        pymol.cmd.select("pk1", tail_sel)  # type: ignore[attr-defined]
-        found_tail = pymol.cmd.count_atoms("pk1") > 0  # type: ignore[attr-defined]
+        pymol.cmd.select("pk1", tail_sel)  
+        found_tail = pymol.cmd.count_atoms("pk1") > 0  
         if found_tail:
-            pymol.cmd.editor.attach_amino_acid("pk1", "nme")  # type: ignore[attr-defined]
+            pymol.cmd.editor.attach_amino_acid("pk1", "nme")  
             _safe_unique_rename("resn NME", "NM")
             applied_caps.append("NME")
 
-    pymol.cmd.h_add("prot")  # type: ignore[attr-defined]
-    pymol.cmd.save(str(output_file), "prot")  # type: ignore[attr-defined]
+    pymol.cmd.h_add("prot")  
+    pymol.cmd.save(str(output_file), "prot")  
 
     meta = {
         "requested_head_name": head_name,

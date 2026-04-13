@@ -27,11 +27,11 @@ def main() -> int:
         print(f"ERROR: {input_pdb} not found!")
         return 1
 
-    pymol.cmd.reinitialize()  # type: ignore[attr-defined]
-    pymol.cmd.load(str(input_pdb), "prot")  # type: ignore[attr-defined]
-    pymol.cmd.remove("hydro")  # type: ignore[attr-defined]
-    pymol.cmd.h_add("prot")  # type: ignore[attr-defined]
-    pymol.cmd.save(str(output_mol2), "prot")  # type: ignore[attr-defined]
+    pymol.cmd.reinitialize()  
+    pymol.cmd.load(str(input_pdb), "prot")  
+    pymol.cmd.remove("hydro")  
+    pymol.cmd.h_add("prot")  
+    pymol.cmd.save(str(output_mol2), "prot")  
     print(f"Conversion successful: {output_mol2}")
     return 0
 
