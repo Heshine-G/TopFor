@@ -97,8 +97,6 @@ For each input file `NAME.mol2`, the tool creates a directory `NAME/` containing
 # Single file
 topfor -i AIB.mol2
 
-# Batch via glob
-topfor -b "residues/*.mol2"
 
 # Batch via list
 echo "AIB.mol2" > list.txt
