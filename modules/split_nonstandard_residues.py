@@ -348,9 +348,10 @@ def extract_nonstandard_residues_from_mol2(input_mol2: str, output_dir: str) -> 
     for atom in atoms:
         residues.setdefault(atom.subst_id, []).append(atom)
 
-    selected_by_resname: Dict[str, tuple[tuple[int, int, int, int], List[AtomRec], List[BondRec], dict]] = {}
+    selected_by_resname: Dict[str, dict] = {}
 
-    for subst_id, residue_atoms in residues.items():
+    for subst_id in sorted(residues):
+        residue_atoms = residues[subst_id]
         raw_name = residue_atoms[0].subst_name
         resname = normalize_resname(raw_name)
 
@@ -409,13 +410,38 @@ def extract_nonstandard_residues_from_mol2(input_mol2: str, output_dir: str) -> 
         }
 
         rank = _candidate_rank(meta, residue_atoms, residue_bonds)
+
+        candidate = {
+            "rank": rank,
+            "subst_id": int(subst_id),
+            "residue_atoms": residue_atoms,
+            "residue_bonds": residue_bonds,
+            "meta": meta,
+        }
+
         prev = selected_by_resname.get(resname)
-        if prev is None or rank > prev[0]:
-            selected_by_resname[resname] = (rank, residue_atoms, residue_bonds, meta)
+        if prev is None:
+            selected_by_resname[resname] = candidate
+            continue
+
+        prev_rank = prev["rank"]
+        prev_subst_id = int(prev["subst_id"])
+
+        if rank > prev_rank:
+            selected_by_resname[resname] = candidate
+            continue
+
+        if rank == prev_rank and int(subst_id) < prev_subst_id:
+            selected_by_resname[resname] = candidate
 
     extracted: List[str] = []
 
-    for resname, (_, residue_atoms, residue_bonds, meta) in sorted(selected_by_resname.items()):
+    for resname in sorted(selected_by_resname):
+        selected = selected_by_resname[resname]
+        residue_atoms = selected["residue_atoms"]
+        residue_bonds = selected["residue_bonds"]
+        meta = selected["meta"]
+
         output_file = out / f"{resname}.mol2"
         meta_file = out / f"{resname}.split.json"
 

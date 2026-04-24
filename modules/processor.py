@@ -3,13 +3,17 @@ from __future__ import annotations
 import json
 import subprocess
 from pathlib import Path
+from typing import Any
 
+from modules.run_resp_orca import run_resp_charge_workflow
 from modules.split_nonstandard_residues import extract_nonstandard_residues
 from modules.utils import (
     classify_residue_net_charge,
+    fix_backbone_atom_types,
     normalize_resname,
     renormalize_mol2_partial_charges_to_integer,
     validate_molecule,
+    normalize_cap_atom_names_in_mol2,
 )
 
 
@@ -24,7 +28,7 @@ class NonStandardAminoAcidProcessor:
         output_base: str = ".",
     ):
         self.input_file = input_file
-        self.charge_model = charge_model
+        self.charge_model = str(charge_model).strip().lower()
         self.residue_map = residue_map or {}
         self.default_net_charge = default_net_charge
         self.net_charge_override = net_charge_override
@@ -187,6 +191,7 @@ class NonStandardAminoAcidProcessor:
         net_charge: int,
         charge_source: str,
         validation_warnings: list[str],
+        charge_backend_meta: dict[str, Any] | None = None,
     ) -> None:
         split_meta = cfg.get("split_meta", {}) or {}
         meta = {
@@ -203,6 +208,8 @@ class NonStandardAminoAcidProcessor:
             "applied_caps": list(capping_meta.get("applied_caps", [])),
             "net_charge": int(net_charge),
             "net_charge_source": charge_source,
+            "charge_model": self.charge_model,
+            "charge_backend_meta": charge_backend_meta or {},
             "validation_warnings": validation_warnings,
             "source_input": split_meta.get("source_input"),
             "source_subst_id": split_meta.get("source_subst_id"),
@@ -217,6 +224,86 @@ class NonStandardAminoAcidProcessor:
             "full_context_charge_source": split_meta.get("full_context_charge_source"),
         }
         (residue_dir / "residue_meta.json").write_text(json.dumps(meta, indent=2), encoding="utf-8")
+
+    def _assign_charges_with_antechamber(
+        self,
+        *,
+        capped_file: Path,
+        charged_file: Path,
+        resname: str,
+        net_charge: int,
+    ) -> dict[str, Any]:
+        cmd = [
+            "antechamber",
+            "-fi", "mol2",
+            "-i", str(capped_file),
+            "-bk", resname,
+            "-fo", "mol2",
+            "-o", str(charged_file),
+            "-c", self.charge_model,
+            "-at", "amber",
+            "-nc", str(net_charge),
+        ]
+
+        charge_result = self._run(cmd, cwd=charged_file.parent)
+        if charge_result.returncode != 0:
+            raise RuntimeError(
+                f"antechamber charge assignment failed for {resname}\n"
+                f"STDOUT:\n{charge_result.stdout}\n"
+                f"STDERR:\n{charge_result.stderr}"
+            )
+
+        return {
+            "charge_method": self.charge_model,
+            "charge_backend": "antechamber",
+            "net_charge": int(net_charge),
+            "files": {
+                "input_mol2": str(capped_file),
+                "output_mol2": str(charged_file),
+            },
+        }
+
+    def _assign_charges_with_resp(
+        self,
+        *,
+        capped_file: Path,
+        charged_file: Path,
+        resname: str,
+        net_charge: int,
+    ) -> dict[str, Any]:
+        return run_resp_charge_workflow(
+            capped_file=str(capped_file),
+            charged_file=str(charged_file),
+            resname=resname,
+            net_charge=int(net_charge),
+            residue_dir=str(charged_file.parent),
+        )
+
+    def _assign_charges(
+        self,
+        *,
+        capped_file: Path,
+        charged_file: Path,
+        resname: str,
+        net_charge: int,
+    ) -> dict[str, Any]:
+        if self.charge_model in {"bcc", "gas"}:
+            return self._assign_charges_with_antechamber(
+                capped_file=capped_file,
+                charged_file=charged_file,
+                resname=resname,
+                net_charge=net_charge,
+            )
+
+        if self.charge_model == "resp":
+            return self._assign_charges_with_resp(
+                capped_file=capped_file,
+                charged_file=charged_file,
+                resname=resname,
+                net_charge=net_charge,
+            )
+
+        raise ValueError(f"Unsupported charge model: {self.charge_model}")
 
     def _process_input_path(self, input_path: Path):
         resname = self._get_residue_name(str(input_path))
@@ -250,8 +337,11 @@ class NonStandardAminoAcidProcessor:
             )
 
         capped_file = residue_dir / "residue_capped.mol2"
+        
         if not capped_file.exists() or capped_file.stat().st_size == 0:
             raise RuntimeError(f"Capped MOL2 was not created for {resname}: {capped_file}")
+        
+        #normalize_cap_atom_names_in_mol2(capped_file)
 
         capping_meta_file = residue_dir / "residue_capping_meta.json"
         try:
@@ -260,9 +350,21 @@ class NonStandardAminoAcidProcessor:
             capping_meta = {}
 
         validation_warnings = input_warnings + validate_molecule(str(capped_file), expected_charge=net_charge)
-        print(f"[{resname}] net charge = {net_charge} (source: {charge_source})")
+        print(f"[{resname}] net charge = {net_charge}")
+        print(f"[{resname}] charge model = {self.charge_model}")
         for w in validation_warnings:
             print(f"[{resname}] warning: {w}")
+
+        charged_file = residue_dir / f"{resname}.mol2"
+        charge_backend_meta = self._assign_charges(
+            capped_file=capped_file,
+            charged_file=charged_file,
+            resname=resname,
+            net_charge=int(net_charge),
+        )
+
+        renormalize_mol2_partial_charges_to_integer(str(charged_file), int(net_charge))
+        fix_backbone_atom_types(str(charged_file))
 
         self._write_residue_meta(
             residue_dir,
@@ -272,33 +374,9 @@ class NonStandardAminoAcidProcessor:
             net_charge=net_charge,
             charge_source=charge_source,
             validation_warnings=validation_warnings,
+            charge_backend_meta=charge_backend_meta,
         )
 
-        charged_file = residue_dir / f"{resname}.mol2"
-        cmd = [
-            "antechamber",
-            "-fi", "mol2",
-            "-i", str(capped_file),
-            "-bk", resname,
-            "-fo", "mol2",
-            "-o", str(charged_file),
-            "-c", self.charge_model,
-            "-at", "amber",
-            "-nc", str(net_charge),
-        ]
-
-        charge_result = self._run(cmd, cwd=residue_dir)
-        if charge_result.returncode != 0:
-            raise RuntimeError(
-                f"antechamber charge assignment failed for {resname}\n"
-                f"STDOUT:\n{charge_result.stdout}\n"
-                f"STDERR:\n{charge_result.stderr}"
-            )
-
-        renormalize_mol2_partial_charges_to_integer(str(charged_file), int(net_charge))
-
-        from modules.utils import fix_backbone_atom_types
-        fix_backbone_atom_types(str(charged_file))
         return [str(charged_file)]
 
     def process_single_residue(self):
@@ -312,8 +390,14 @@ class NonStandardAminoAcidProcessor:
         extracted_paths = extract_nonstandard_residues(str(peptide_path), str(split_dir))
 
         all_charged = []
+
         for residue in extracted_paths:
-            charged = self._process_input_path(Path(residue).resolve())
-            all_charged.extend(charged)
+            try:
+                charged = self._process_input_path(Path(residue).resolve())
+                all_charged.extend(charged)
+            except Exception as e:
+                resname = Path(residue).stem
+                print(f"[FAILED] {resname}: {e}")
+                continue
 
         return all_charged

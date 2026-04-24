@@ -4,7 +4,7 @@ import sys
 from pathlib import Path
 
 try:
-    import pymol  # type: ignore
+    import pymol  
 except Exception:
     pymol = None
 

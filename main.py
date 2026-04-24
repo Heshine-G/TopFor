@@ -29,7 +29,6 @@ def load_residue_map(path: str | None) -> dict:
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
-    
     parser = argparse.ArgumentParser(
         description="nsaa-paramgen: NSAA AMBER parameter generation (ff19SB/ff14SB + gaff/gaff2)."
     )
@@ -49,7 +48,7 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
     parser.add_argument("--backbone", "-bb", choices=["ff14SB", "ff19SB", "ff99SB"], default="ff19SB")
     parser.add_argument("--sidechain", "-sc", choices=["gaff", "gaff2"], default="gaff2")
-    parser.add_argument("--charge", "-c", choices=["gas", "bcc"], default="bcc")
+    parser.add_argument("--charge", "-c", choices=["gas", "bcc", "resp"], default="bcc")
     parser.add_argument("--gmx", "-gmx", action="store_true", help="Generate GROMACS files.")
 
     parser.add_argument("--map", default=None, help="Residue mapping JSON file.")
@@ -61,7 +60,6 @@ def build_arg_parser() -> argparse.ArgumentParser:
 
 
 def expand_batch_argument(batch_arg: str) -> list[str]:
-    
     p = Path(batch_arg)
 
     if p.exists() and p.is_file():
@@ -82,7 +80,6 @@ def expand_batch_argument(batch_arg: str) -> list[str]:
 
 
 def main() -> None:
-    
     parser = build_arg_parser()
     args = parser.parse_args()
 
@@ -94,7 +91,6 @@ def main() -> None:
     charged_files: list[str] = []
 
     def build_processor(path: str) -> NonStandardAminoAcidProcessor:
-        
         return NonStandardAminoAcidProcessor(
             input_file=path,
             charge_model=args.charge,
@@ -105,12 +101,10 @@ def main() -> None:
         )
 
     def process_one(path: str) -> None:
-       
         proc = build_processor(path)
         charged = proc.process_single_residue()
         charged_files.extend(charged)
 
-    
     if args.input:
         try:
             process_one(args.input)
@@ -118,7 +112,6 @@ def main() -> None:
             print(f"[FAILED] {args.input}")
             print(e)
 
-    
     elif args.peptide:
         try:
             proc = build_processor(args.peptide)
@@ -127,7 +120,6 @@ def main() -> None:
             print(f"[FAILED] peptide processing: {args.peptide}")
             print(e)
 
-    
     elif args.batch:
         batch_items = expand_batch_argument(args.batch)
 
@@ -157,7 +149,6 @@ def main() -> None:
             for f in failures:
                 print(" -", f)
 
-    
     if charged_files:
         run_antechamber_for_all(
             charged_files,

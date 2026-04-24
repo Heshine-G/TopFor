@@ -962,3 +962,63 @@ def fix_backbone_atom_types_in_prepin(prepin_path: str) -> bool:
     if changed:
         Path(prepin_path).write_text("\n".join(new_lines) + "\n", encoding="utf-8")
     return changed
+
+def normalize_cap_atom_names_in_mol2(mol2_path: Path) -> None:
+    """
+    Convert PyMOL cap naming (AC*, NM*) → canonical Amber naming.
+    Only affects ACE/NME residues.
+    """
+
+    lines = mol2_path.read_text().splitlines()
+    new_lines = []
+
+    in_atoms = False
+
+    ace_map = {
+        "AC1": "CC1",
+        "AC2": "OC2",
+        "AC3": "CC3",
+        "AC4": "HC4",
+        "AC5": "HC5",
+        "AC6": "HC6",
+    }
+
+    nme_map = {
+        "NM1": "NM1",
+        "NM2": "CM2",
+        "NM3": "HM3",
+        "NM4": "HM4",
+        "NM5": "HM5",
+        "NM6": "HM6",
+    }
+
+    for line in lines:
+        s = line.strip()
+
+        if s.startswith("@<TRIPOS>ATOM"):
+            in_atoms = True
+            new_lines.append(line)
+            continue
+
+        if s.startswith("@<TRIPOS>") and in_atoms:
+            in_atoms = False
+            new_lines.append(line)
+            continue
+
+        if in_atoms and s:
+            parts = line.split()
+            if len(parts) >= 8:
+                name = parts[1]
+                resn = parts[7].upper()
+
+                if resn == "ACE" and name in ace_map:
+                    parts[1] = ace_map[name]
+
+                elif resn == "NME" and name in nme_map:
+                    parts[1] = nme_map[name]
+
+                line = " ".join(parts)
+
+        new_lines.append(line)
+
+    mol2_path.write_text("\n".join(new_lines) + "\n")

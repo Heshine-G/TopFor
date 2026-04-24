@@ -109,7 +109,7 @@ def run_antechamber_for_all(
     gaff_parm_path = os.path.join(amberhome, "dat", "leap", "parm", sidechain_map[sidechain])
 
     for input_mol2 in mol2_files:
-        start_time = time.perf_counter()
+        #start_time = time.perf_counter()
 
         mol2_path = Path(input_mol2).resolve()
         residue_dir = mol2_path.parent
@@ -128,7 +128,7 @@ def run_antechamber_for_all(
         gaff_frcmod_output = residue_dir / f"{resname}_{sidechain}.frcmod"
 
         net_charge, charge_source = _read_net_charge_for_residue(residue_dir, mol2_path)
-        print(f"[{resname}] using net charge = {net_charge} (source: {charge_source})")
+        print(f"[{resname}] using net charge = {net_charge}")
 
         antechamber_cmd = [
             "antechamber",
@@ -216,6 +216,6 @@ def run_antechamber_for_all(
             print(f"{resname} failed at tleap.")
             continue
 
-        total_time = time.perf_counter() - start_time
+        #total_time = time.perf_counter() - start_time
         print(f"\033[1m\n{resname} parametrization complete\033[0m")
-        print(f"Time taken: {total_time:.2f} s\n")
+        #print(f"Time taken: {total_time:.2f} s\n")
