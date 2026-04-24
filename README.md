@@ -7,7 +7,7 @@ TopFor is a command-line tool for generating AMBER parameters for non-standard a
 ## Features
 
 - **Single-file mode**: Process one MOL2 file at a time  
-- **Batch mode**: Process multiple MOL2 files via glob patterns or a text file list  
+- **Batch mode**: Process multiple MOL2 files via a text file list  
 - **Automated pipeline**: Capping, Antechamber, TLeap, PREPGEN, and PARMCHK2 steps are chained automatically  
 
 ---
@@ -59,12 +59,6 @@ source ~/.bashrc
 
 ```bash
 topfor -i myresidue.mol2
-```
-
-### Batch mode via glob pattern
-
-```bash
-topfor -b "*.mol2"
 ```
 
 ### Batch mode via text file list
